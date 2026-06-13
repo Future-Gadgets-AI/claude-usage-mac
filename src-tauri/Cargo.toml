@@ -1,0 +1,31 @@
+[package]
+name = "claude-usage-mac"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "claude_usage_mac_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-positioner = { version = "2", features = ["tray-icon"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2", "charset"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Pinned: time 0.3.48 has an E0119 trait-coherence regression that breaks
+# cookie/tauri-utils on rustc 1.94-1.96. 0.3.47 is the floor `plist` allows
+# and predates the bug. Remove the pin once 0.3.49+ ships a fix.
+time = "=0.3.47"
+

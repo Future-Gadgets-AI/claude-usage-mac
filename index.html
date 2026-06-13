@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Usage</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <div id="popover">
+
+      <!-- Error banner (state != 'ok') -->
+      <div id="error-banner"></div>
+
+      <!-- Header: title + overall status dot -->
+      <div class="header">
+        <span class="header-title">Claude Usage</span>
+        <div id="header-status-dot" class="component-dot dot-operational"></div>
+      </div>
+
+      <!-- ── 5-Hour section ────────────────────────────────────────────── -->
+      <div class="section-label">5-Hour Session</div>
+
+      <div class="bar-row">
+        <div class="bar-track" id="bar-track-5h">
+          <div class="bar-fill bar-blue" id="bar-fill-5h"></div>
+          <div class="bar-marker" id="bar-marker-5h"></div>
+        </div>
+        <span class="bar-pct" id="pct-5h">--%</span>
+      </div>
+      <div class="bar-reset" id="reset-5h"></div>
+
+      <!-- ── 7-Day section ─────────────────────────────────────────────── -->
+      <div class="section-label">7-Day Rolling</div>
+
+      <div class="bar-row">
+        <div class="bar-track" id="bar-track-7d">
+          <div class="bar-fill bar-blue" id="bar-fill-7d"></div>
+          <div class="bar-marker" id="bar-marker-7d"></div>
+        </div>
+        <span class="bar-pct" id="pct-7d">--%</span>
+      </div>
+      <div class="bar-reset" id="reset-7d"></div>
+
+      <!-- ── Per-model breakdown (7d) ──────────────────────────────────── -->
+      <div id="model-section">
+        <div class="section-label">Per-Model (7d)</div>
+        <div class="model-row" id="row-sonnet">
+          <span class="model-label">Sonnet</span>
+          <span class="model-pct" id="pct-sonnet"></span>
+        </div>
+        <div class="model-row" id="row-opus">
+          <span class="model-label">Opus</span>
+          <span class="model-pct" id="pct-opus"></span>
+        </div>
+        <div class="model-row" id="row-cowork">
+          <span class="model-label">Cowork</span>
+          <span class="model-pct" id="pct-cowork"></span>
+        </div>
+      </div>
+
+      <!-- ── Usage History: 5h graph placeholder (6b wires in) ─────────── -->
+      <div class="section-label" style="display:flex;align-items:center;">
+        <span style="flex:1">Usage History</span>
+        <!-- Σ button: 6b toggles cumulative mode on both graphs -->
+        <button class="graph-sigma-btn" id="btn-sigma" title="Toggle cumulative mode">&#x03A3;</button>
+      </div>
+
+      <div class="graph-block" id="graph-block-5h">
+        <div class="graph-nav-row">
+          <span class="graph-title">Credit Rate &ndash; 30min Buckets (24h)</span>
+          <!-- ◀ prev day, ▶ next day — 6b wires these -->
+          <button class="graph-nav-btn" id="btn-5h-prev" title="Previous day">&#x25C0;</button>
+          <span class="graph-nav-label" id="nav-label-5h">Today</span>
+          <button class="graph-nav-btn" id="btn-5h-next" title="Next day" disabled style="opacity:0.25">&#x25B6;</button>
+        </div>
+        <div class="graph-canvas-wrap">
+          <canvas id="canvas-5h" width="332" height="80"></canvas>
+        </div>
+        <div class="graph-stats" id="stats-5h"></div>
+      </div>
+
+      <div class="graph-divider"></div>
+
+      <div class="graph-block" id="graph-block-7d">
+        <div class="graph-nav-row">
+          <span class="graph-title">Credit Rate &ndash; Daily Buckets (7d)</span>
+          <!-- ◀ prev week, ▶ next week — 6b wires these -->
+          <button class="graph-nav-btn" id="btn-7d-prev" title="Previous week">&#x25C0;</button>
+          <span class="graph-nav-label" id="nav-label-7d">This week</span>
+          <button class="graph-nav-btn" id="btn-7d-next" title="Next week" disabled style="opacity:0.25">&#x25B6;</button>
+        </div>
+        <div class="graph-canvas-wrap">
+          <canvas id="canvas-7d" width="332" height="80"></canvas>
+        </div>
+        <div class="graph-stats" id="stats-7d"></div>
+      </div>
+
+      <!-- ── Service Status section ────────────────────────────────────── -->
+      <div class="section-label">Service Status</div>
+
+      <div id="status-section">
+        <div class="component-row" id="comp-claudeai">
+          <div class="component-dot dot-operational" id="dot-claudeai"></div>
+          <span class="component-name">claude.ai</span>
+          <span class="component-status" id="status-claudeai">Operational</span>
+        </div>
+        <div class="component-row" id="comp-api">
+          <div class="component-dot dot-operational" id="dot-api"></div>
+          <span class="component-name">API</span>
+          <span class="component-status" id="status-api">Operational</span>
+        </div>
+        <div class="component-row" id="comp-claudecode">
+          <div class="component-dot dot-operational" id="dot-claudecode"></div>
+          <span class="component-name">Claude Code</span>
+          <span class="component-status" id="status-claudecode">Operational</span>
+        </div>
+
+        <div id="incident-label"></div>
+        <a class="status-link" href="https://status.claude.com" target="_blank">status.claude.com</a>
+      </div>
+
+      <!-- ── Footer ────────────────────────────────────────────────────── -->
+      <div class="footer">
+        <button id="btn-refresh">Refresh Now</button>
+        <span id="last-updated"></span>
+      </div>
+
+    </div>
+  </body>
+</html>

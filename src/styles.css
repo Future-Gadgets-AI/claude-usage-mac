@@ -1,0 +1,380 @@
+/* =========================================================================
+   Root / reset
+   ========================================================================= */
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  color: #e8e8e8;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Opaque, full-height shell. A fixed-size window taller than its content would
+   otherwise show transparent gaps (desktop showing through); the opaque body
+   guarantees the popover always renders as a solid panel, and overflow-y keeps
+   tall content scrollable instead of clipped. */
+html, body {
+  min-height: 100vh;
+  background: #1e1e1e;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* Thin, subtle scrollbar that doesn't crowd the content. The transparent
+   border + padding-box clip insets the thumb so it floats with a gutter
+   rather than butting up against the right-aligned labels. */
+body::-webkit-scrollbar {
+  width: 11px;
+}
+body::-webkit-scrollbar-track {
+  background: transparent;
+}
+body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+}
+
+/* =========================================================================
+   Popover shell
+   ========================================================================= */
+#popover {
+  background: #1e1e1e;
+  border-radius: 10px;
+  padding: 12px 15px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  /* For dev: drop shadow so the window is visible */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+}
+
+/* =========================================================================
+   Error banner — shown when state != 'ok'
+   ========================================================================= */
+#error-banner {
+  display: none;
+  background: #3a1a1a;
+  border: 1px solid #7a2222;
+  border-radius: 6px;
+  color: #ff8080;
+  font-size: 11px;
+  padding: 6px 9px;
+  margin-bottom: 8px;
+}
+#error-banner.visible {
+  display: block;
+}
+
+/* =========================================================================
+   Header
+   ========================================================================= */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.header-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f0f0f0;
+  flex: 1;
+}
+/* Overall status dot in header */
+#header-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* =========================================================================
+   Section labels
+   ========================================================================= */
+.section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #888;
+  margin-bottom: 5px;
+  margin-top: 10px;
+}
+.section-label:first-of-type {
+  margin-top: 0;
+}
+
+/* =========================================================================
+   Bar row (bar + pct label)
+   ========================================================================= */
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+/* =========================================================================
+   Progress bar — CSS/DOM (HiDPI-crisp)
+   ========================================================================= */
+.bar-track {
+  flex: 1;
+  height: 10px;
+  background: #3c3c3c;
+  border-radius: 5px;
+  position: relative;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.3s ease;
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+/* Threshold colors — ported from indicator.js:29-32 / _updatePanelBar lines 144-147 */
+.bar-blue  { background: #3685e3; } /* pct < 50  — rgb(0.21,0.52,0.89) */
+.bar-amber { background: #e6a50a; } /* 50 ≤ pct < 80 — rgb(0.90,0.65,0.04) */
+.bar-red   { background: #e11c24; } /* pct ≥ 80  — rgb(0.88,0.11,0.14) */
+
+/* Time-position marker — 2px white line absolutely positioned */
+.bar-marker {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.85);
+  display: none;
+  pointer-events: none;
+}
+.bar-marker.visible {
+  display: block;
+}
+
+.bar-pct {
+  font-size: 11px;
+  font-weight: 600;
+  color: #c0c0c0;
+  min-width: 34px;
+  text-align: right;
+}
+
+.bar-reset {
+  font-size: 10px;
+  color: #777;
+  margin-bottom: 3px;
+}
+
+/* =========================================================================
+   Per-model rows
+   ========================================================================= */
+#model-section {
+  display: none;
+}
+#model-section.visible {
+  display: block;
+}
+
+.model-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+}
+.model-label {
+  font-size: 11px;
+  color: #aaa;
+}
+.model-pct {
+  font-size: 11px;
+  font-weight: 600;
+  color: #c0c0c0;
+}
+
+/* Individual model rows — hidden until data arrives */
+#row-sonnet, #row-opus, #row-cowork {
+  display: none;
+}
+#row-sonnet.visible, #row-opus.visible, #row-cowork.visible {
+  display: flex;
+}
+
+/* =========================================================================
+   Graph placeholder blocks (6b/6c wires in later)
+   ========================================================================= */
+.graph-block {
+  margin-top: 4px;
+}
+
+.graph-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.graph-title {
+  font-size: 10px;
+  color: #888;
+  flex: 1;
+}
+.graph-nav-btn {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 3px;
+  line-height: 1;
+}
+.graph-nav-btn:hover {
+  color: #e8e8e8;
+  background: #333;
+}
+.graph-nav-btn.active {
+  color: #f0f0f0;
+}
+.graph-nav-label {
+  font-size: 10px;
+  color: #888;
+  min-width: 54px;
+  text-align: center;
+}
+.graph-sigma-btn {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.graph-sigma-btn:hover {
+  color: #e8e8e8;
+  background: #333;
+}
+.graph-canvas-wrap {
+  background: #2a2a2a;
+  border-radius: 6px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.graph-canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.graph-stats {
+  font-size: 10px;
+  color: #666;
+  margin-top: 3px;
+}
+
+.graph-divider {
+  height: 1px;
+  background: #2e2e2e;
+  margin: 8px 0;
+}
+
+/* =========================================================================
+   Service status section
+   ========================================================================= */
+.component-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+.component-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.component-name {
+  font-size: 11px;
+  color: #aaa;
+  flex: 1;
+}
+.component-status {
+  font-size: 10px;
+  color: #777;
+}
+
+/* Dot states */
+.dot-operational { background: #2da44e; }
+.dot-minor       { background: #e6a50a; }
+.dot-major       { background: #e11c24; }
+.dot-critical    { background: #e11c24; }
+.dot-degraded    { background: #e6a50a; }
+
+#incident-label {
+  font-size: 10px;
+  color: #e6a50a;
+  margin-top: 3px;
+  display: none;
+}
+#incident-label.visible {
+  display: block;
+}
+
+.status-link {
+  font-size: 10px;
+  color: #4a90d9;
+  text-decoration: none;
+  display: inline-block;
+  margin-top: 4px;
+}
+.status-link:hover {
+  text-decoration: underline;
+}
+
+/* =========================================================================
+   Footer — refresh + last-updated
+   ========================================================================= */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #2e2e2e;
+}
+#btn-refresh {
+  background: #2c2c2c;
+  border: 1px solid #444;
+  border-radius: 5px;
+  color: #c0c0c0;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 10px;
+}
+#btn-refresh:hover {
+  background: #383838;
+  border-color: #555;
+  color: #f0f0f0;
+}
+#last-updated {
+  font-size: 10px;
+  color: #555;
+}
