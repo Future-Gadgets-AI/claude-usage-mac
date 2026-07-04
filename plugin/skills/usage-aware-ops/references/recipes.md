@@ -13,10 +13,25 @@ while true; do
   U=$(~/.claude/bin/claude-usage --cached 2>/dev/null | jq -r '.five_hour.utilization // -1' | cut -d. -f1)
   C=$(ls -t ~/.claude/state/context-*.json 2>/dev/null | head -1 | xargs cat 2>/dev/null | jq -r '.ctx_pct // -1')
   for T in 50 75 90 95; do
-    [ "$U" -ge "$T" ] 2>/dev/null && [ "$LAST_U" -lt "$T" ] && echo "USAGE ${T}% crossed (now ${U}%) — ladder action: $([ $T -eq 50 ] && echo note || [ $T -eq 75 ] && echo downshift-tiers || [ $T -eq 90 ] && echo checkpoint-to-ledger || echo wrap-and-sleep)"
+    if [ "$U" -ge "$T" ] 2>/dev/null && [ "$LAST_U" -lt "$T" ]; then
+      case $T in
+        50) A=note ;;
+        75) A=downshift-tiers ;;
+        90) A=checkpoint-to-ledger ;;
+        95) A=wrap-and-sleep ;;
+      esac
+      echo "USAGE ${T}% crossed (now ${U}%) — ladder action: $A"
+    fi
   done
   for T in 60 80 90; do
-    [ "$C" -ge "$T" ] 2>/dev/null && [ "$LAST_C" -lt "$T" ] && echo "CONTEXT ${T}% crossed (now ${C}%) — $([ $T -eq 60 ] && echo delegate-heavy-reads || [ $T -eq 80 ] && echo persist-durable-state || echo clean-boundary-wrap)"
+    if [ "$C" -ge "$T" ] 2>/dev/null && [ "$LAST_C" -lt "$T" ]; then
+      case $T in
+        60) A=delegate-heavy-reads ;;
+        80) A=persist-durable-state ;;
+        90) A=clean-boundary-wrap ;;
+      esac
+      echo "CONTEXT ${T}% crossed (now ${C}%) — $A"
+    fi
   done
   [ "$U" -ge 0 ] && LAST_U=$U; [ "$C" -ge 0 ] && LAST_C=$C
   [ "$U" -lt 0 ] && echo "USAGE DATA UNAVAILABLE — conservative mode (treat as ≥90%)"
