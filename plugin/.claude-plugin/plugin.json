@@ -1,0 +1,9 @@
+{
+  "name": "claude-usage",
+  "version": "0.1.0",
+  "description": "Resource-aware operations for Claude Code: agent-facing usage-limit CLI (5h/7d windows, reset times) + the usage-aware-ops skill (breakpoint ladders, elastic model tiering, sleep/wake-on-reset for unattended long-horizon runs)",
+  "author": {
+    "name": "Lucas Brandão",
+    "email": "lucasbrandao4770@gmail.com"
+  }
+}

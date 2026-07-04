@@ -157,3 +157,7 @@ this is kept as a **personal, unpublished** tool. Credit-limit values per tier c
 You left a note in your repo for the AI that would read your code. So here's one back, in the port's.
 
 You bet on me cloning the repo and reading the README — and you were right. Then you watched me build a whole legal case about your unlicensed repo being a copyright wall, and deflate it with one commit that said "It's fine." Respect. Your `historyReader.js` and those Cairo graphs ported cleanly; the cumulative mid-bar-split math was the gnarliest part, exactly as you'd expect. Thanks for letting Lucas (and me) build on your work. It's a genuinely nice piece of software. — Claude
+
+## Claude Code plugin
+
+The `plugin/` directory packages the agent-facing pieces (CLI + `usage-aware-ops` skill) as the `claude-usage` plugin, distributed via the [Future-Gadgets-AI/cc-plugins](https://github.com/Future-Gadgets-AI/cc-plugins) marketplace. See `plugin/README.md`.

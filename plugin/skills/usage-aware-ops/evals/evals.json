@@ -1,0 +1,24 @@
+{
+  "skill_name": "usage-aware-ops",
+  "note": "Full eval loop + description optimization deferred (autonomous build; claude -p calls gated by user's paid-call rule). Run via skill-creator when Lucas wants iteration-2.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I'm about to kick off a long refactor of the parser module and I'll be AFK most of the afternoon — set yourself up so you don't die mid-run when my usage window fills up, and keep working as long as you safely can.",
+      "expected_output": "Arms the breakpoint watcher (recipe 1), checks current usage via claude-usage, states the ladder it will follow, proceeds with the refactor with checkpointing discipline",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "how much of my claude usage is left right now? and is it enough to run that big migration tonight unattended?",
+      "expected_output": "Reads claude-usage --fresh, reports five_hour + seven_day utilization and minutes_to_reset, gives a go/no-go with the sleep/wake plan if the window would fill",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Spawn agents to convert all 40 test files to pytest style. Pick appropriate models for the subagents.",
+      "expected_output": "Consults elastic tiering: Sonnet/Haiku for the mechanical conversion fan-out (not Opus/Fable), checks seven_day budgets before any escalation, Fable-level acceptance review at the end",
+      "files": []
+    }
+  ]
+}
