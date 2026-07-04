@@ -25,7 +25,7 @@ A Claude Code session is blind to two budgets that end it: the 5-hour usage wind
 ~/.claude/bin/claude-usage --fresh    # force fetch; use before big decisions (sleep, tier shift)
 ```
 
-Key output fields: `five_hour.utilization` (%), `minutes_to_reset`, `seven_day.utilization`, `seven_day_opus.utilization`, `seven_day_sonnet.utilization`, `stale` (cache older than TTL). Exit codes: 0 ok · 2 credentials/reauth · 3 network · 4 parse · 6 no cache yet.
+Key output fields: `five_hour.utilization` (%), `minutes_to_reset`, `seven_day.utilization`, `seven_day_opus.utilization`, `seven_day_sonnet.utilization`, `stale` (cache older than TTL). Exit codes: 0 ok · 1 bad-args · 2 credentials/reauth · 3 network · 4 parse · 5 missing-dependency (jq) · 6 no cache yet.
 
 **Context window** — newest `~/.claude/state/context-*.json` whose `cwd` matches your working directory (the statusline refreshes it about every second):
 

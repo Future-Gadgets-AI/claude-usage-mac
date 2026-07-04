@@ -248,12 +248,18 @@ do_network_fetch() {
   BODY_TMP="$(mktemp "${STATE_DIR}/.usage.body.XXXXXX")"
   ERR_TMP="$(mktemp "${STATE_DIR}/.usage.curlerr.XXXXXX")"
 
+  # Authorization goes in via curl's stdin config (-K -), not argv, so the
+  # token is never visible to other local processes through `ps` — closes the
+  # sub-second argv exposure window flagged in plugin validation.
   set +e
   http_code="$(curl -sS -m 10 -o "$BODY_TMP" -w '%{http_code}' \
-    -H "Authorization: Bearer ${token}" \
+    -K - \
     -H "anthropic-beta: oauth-2025-04-20" \
     -H "User-Agent: ${ua}" \
-    "$USAGE_URL" 2>"$ERR_TMP")"
+    "$USAGE_URL" 2>"$ERR_TMP" <<EOF
+header = "Authorization: Bearer ${token}"
+EOF
+)"
   curl_exit=$?
   set -e
   token=""
