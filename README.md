@@ -69,6 +69,74 @@ flag: `xattr -dr com.apple.quarantine /Applications/claude-usage-mac.app`.)
 
 **Start automatically at login:** System Settings → General → **Login Items** → **+** → add the app.
 
+## CLI: claude-usage
+
+A dependency-light shell CLI at `bin/claude-usage` that mirrors the app's fetch logic
+(`src-tauri/src/lib.rs`) for agent-facing usage reads — feeding a statusline or an
+autonomous-agent workflow that needs usage numbers without a GUI. Requires `/usr/bin/security`
+(macOS, always present), `curl`, and `jq`.
+
+**Install:** symlink it onto your `PATH`, e.g.:
+
+```bash
+mkdir -p ~/.claude/bin
+ln -s "$(pwd)/bin/claude-usage" ~/.claude/bin/claude-usage
+```
+
+### Flags
+
+| Flag | Behavior |
+|---|---|
+| *(none)* | Emit the cache if it's within TTL; otherwise fetch, cache, then emit. |
+| `--cached` | Never touches the network. Emits the cache if present (decorated, `stale` reflects real age); exits `6` if there's no cache yet. |
+| `--fresh` | Always fetches live and re-caches before emitting. |
+| `--meta` | No network, no cache — emits `{plan, tier, expiresAt}` read straight from the Keychain blob. |
+
+### Exit codes
+
+| Code | Meaning | Notes |
+|---|---|---|
+| `0` | OK | |
+| `2` | Credentials | `no-credentials` \| `no-token` \| `reauth-needed` — hint: "open Claude Code to refresh login" |
+| `3` | Network | transport failure, or `http-NNN` for a non-2xx/non-401 response |
+| `4` | Parse failure | the Keychain blob or the API response body wasn't valid JSON |
+| `5` | Missing dependency | `jq` isn't installed |
+| `6` | No cache | `--cached` only, when nothing has been fetched yet |
+
+Every failure prints a single-line JSON object to stderr, e.g.
+`{"error":"reauth-needed","hint":"open Claude Code to refresh login"}`. A `401` is always
+`reauth-needed`, never retried — same read-only stance as `get_usage` in `lib.rs`.
+
+### Env vars
+
+| Var | Default | Purpose |
+|---|---|---|
+| `CLAUDE_USAGE_STATE_DIR` | `$HOME/.claude/state` | Where the `usage.json` cache and the fetch lock live. |
+| `CLAUDE_USAGE_KEYCHAIN_SERVICE` | `Claude Code-credentials` | Keychain service name; mainly for forcing the error path in tests. |
+| `CLAUDE_USAGE_CACHE_TTL` | `120` (seconds) | How long a cached fetch is considered fresh. |
+
+### Output fields
+
+The successful JSON is the raw `oauth/usage` response — `five_hour`, `seven_day`, and the
+per-model `seven_day_sonnet` / `seven_day_opus` / `seven_day_cowork` windows, each
+`{utilization, resets_at}` and any of which may be `null` or absent — plus:
+
+- `schema`, `fetched_at` — when this cache entry was written.
+- `age_seconds` — how old the cache is right now.
+- `stale` — `age_seconds > CLAUDE_USAGE_CACHE_TTL`.
+- `minutes_to_reset` — minutes until `five_hour.resets_at`, floored, floor `0`; `null` if that
+  field is missing or unparsable.
+
+### Security
+
+Read-only against the API — there's no token-refresh path; a `401` just means "reauth-needed."
+The OAuth access token is never written to disk, logged, or cached — it lives only in a shell
+variable for the duration of one `curl` call. Claude Code owns the token's lifecycle; this CLI
+(like the Tauri app) only ever reads the Keychain item Claude Code already wrote.
+
+The statusline integration calls `--cached` only, so a slow or unreachable network never blocks
+prompt rendering.
+
 ## Notes
 
 This app reads usage from Anthropic's **undocumented** `oauth/usage` endpoint using the
