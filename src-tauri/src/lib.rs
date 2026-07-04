@@ -11,6 +11,7 @@ use tauri::{
 };
 use tauri_plugin_positioner::{Position, WindowExt};
 
+// Kept in sync with bin/claude-usage (shell CLI) — update both together.
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const STATUS_URL: &str = "https://status.claude.com/api/v2/summary.json";
 const KEYCHAIN_SERVICE: &str = "Claude Code-credentials";

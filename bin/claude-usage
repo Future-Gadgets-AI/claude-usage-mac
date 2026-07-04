@@ -1,0 +1,352 @@
+#!/bin/bash
+set -euo pipefail
+
+# claude-usage — agent-facing shell CLI mirroring src-tauri/src/lib.rs's
+# get_usage / get_credentials_meta Tauri commands (see lines 14-79 there).
+# Read-only against the Anthropic usage API: no token refresh, no token
+# persistence. Claude Code owns the OAuth token lifecycle; a 401 means
+# "reauth-needed" and we stop, we never retry or refresh.
+#
+# Security: the OAuth access token lives only in a local shell variable for
+# the duration of one curl call. It is never echoed, logged, or written to
+# any file (the cache file only ever contains the usage API response body
+# plus our own schema/fetched_at bookkeeping fields).
+#
+# Kept in sync with src-tauri/src/lib.rs — update both together.
+
+# ---------------------------------------------------------------------------
+# Dependency check (fail fast, before anything else touches disk/network)
+# ---------------------------------------------------------------------------
+if ! command -v jq >/dev/null 2>&1; then
+  printf '{"error":"missing-dependency"}\n' >&2
+  exit 5
+fi
+
+# ---------------------------------------------------------------------------
+# Config (all env-overridable)
+# ---------------------------------------------------------------------------
+STATE_DIR="${CLAUDE_USAGE_STATE_DIR:-$HOME/.claude/state}"
+KEYCHAIN_SERVICE="${CLAUDE_USAGE_KEYCHAIN_SERVICE:-Claude Code-credentials}"
+CACHE_TTL="${CLAUDE_USAGE_CACHE_TTL:-120}"
+
+CACHE_FILE="$STATE_DIR/usage.json"
+LOCK_DIR="$STATE_DIR/.usage.fetch.lock"
+USAGE_URL="https://api.anthropic.com/api/oauth/usage"
+PINNED_UA="claude-code/2.1.201"
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+MODE="default"
+case "${1:-}" in
+  --cached) MODE="cached" ;;
+  --fresh) MODE="fresh" ;;
+  --meta) MODE="meta" ;;
+  "") MODE="default" ;;
+  *)
+    printf '{"error":"bad-args","hint":"expected --cached, --fresh, --meta, or no flag"}\n' >&2
+    exit 1
+    ;;
+esac
+
+# ---------------------------------------------------------------------------
+# Cleanup: single trap, state communicated via these globals.
+# ---------------------------------------------------------------------------
+BODY_TMP=""
+ERR_TMP=""
+CACHE_WRITE_TMP=""
+LOCK_HELD=0
+
+cleanup() {
+  [[ -n "$BODY_TMP" && -f "$BODY_TMP" ]] && rm -f "$BODY_TMP"
+  [[ -n "$ERR_TMP" && -f "$ERR_TMP" ]] && rm -f "$ERR_TMP"
+  [[ -n "$CACHE_WRITE_TMP" && -f "$CACHE_WRITE_TMP" ]] && rm -f "$CACHE_WRITE_TMP"
+  if [[ "$LOCK_HELD" -eq 1 ]]; then
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+fail() {
+  # $1=exit code  $2=error tag  $3=optional hint
+  local code="$1" tag="$2" hint="${3:-}"
+  if [[ -n "$hint" ]]; then
+    printf '{"error":"%s","hint":"%s"}\n' "$tag" "$hint" >&2
+  else
+    printf '{"error":"%s"}\n' "$tag" >&2
+  fi
+  exit "$code"
+}
+
+# ---------------------------------------------------------------------------
+# Credentials
+# ---------------------------------------------------------------------------
+read_credentials_blob() {
+  /usr/bin/security find-generic-password -s "$KEYCHAIN_SERVICE" -w 2>/dev/null
+}
+
+# ---------------------------------------------------------------------------
+# ISO8601 -> epoch seconds. macOS BSD `date -j` only parses whole seconds, so
+# take just the "YYYY-MM-DDTHH:MM:SS" prefix (first 19 chars) and discard
+# everything after (fractional seconds, "Z", or a "+00:00"/"-04:00" offset —
+# the live API uses the "+00:00" form, not a bare "Z", so a suffix-strip on
+# "." alone is not enough; a fixed-width prefix take handles all of them).
+# Never crashes: prints nothing and returns nonzero on unparsable input.
+# ---------------------------------------------------------------------------
+iso_to_epoch() {
+  local iso stripped
+  iso="$1"
+  stripped="${iso:0:19}"
+  date -j -u -f "%Y-%m-%dT%H:%M:%S" "$stripped" +%s 2>/dev/null
+}
+
+# ---------------------------------------------------------------------------
+# User-Agent: must look like Claude Code's own, or the endpoint buckets us
+# into an aggressive rate limit (see lib.rs comment on USER_AGENT).
+# ---------------------------------------------------------------------------
+resolve_user_agent() {
+  local ver ua
+  ver=""
+  if command -v claude >/dev/null 2>&1; then
+    ver="$(claude --version 2>/dev/null | awk '{print $1}')" || ver=""
+  fi
+  ua="claude-code/${ver}"
+  if [[ "$ua" == "claude-code/" ]]; then
+    ua="$PINNED_UA"
+  fi
+  printf '%s' "$ua"
+}
+
+# ---------------------------------------------------------------------------
+# Cache helpers
+# ---------------------------------------------------------------------------
+cache_is_fresh() {
+  [[ -f "$CACHE_FILE" ]] || return 1
+  local fetched_at fetched_epoch now age
+  fetched_at="$(jq -r '.fetched_at // empty' "$CACHE_FILE" 2>/dev/null)" || fetched_at=""
+  [[ -n "$fetched_at" ]] || return 1
+  fetched_epoch="$(iso_to_epoch "$fetched_at")" || fetched_epoch=""
+  [[ -n "$fetched_epoch" ]] || return 1
+  now=$(date -u +%s)
+  age=$(( now - fetched_epoch ))
+  (( age <= CACHE_TTL ))
+}
+
+# Reads $CACHE_FILE, computes age_seconds/stale/minutes_to_reset at output
+# time, and prints the decorated JSON to stdout.
+emit_from_cache() {
+  local fetched_at now fetched_epoch age_seconds stale
+  local resets_at resets_epoch diff minutes_to_reset
+
+  fetched_at="$(jq -r '.fetched_at // empty' "$CACHE_FILE" 2>/dev/null)" || fetched_at=""
+  now=$(date -u +%s)
+
+  age_seconds="null"
+  stale="true"
+  if [[ -n "$fetched_at" ]]; then
+    fetched_epoch="$(iso_to_epoch "$fetched_at")" || fetched_epoch=""
+    if [[ -n "$fetched_epoch" ]]; then
+      age_seconds=$(( now - fetched_epoch ))
+      if (( age_seconds > CACHE_TTL )); then stale="true"; else stale="false"; fi
+    fi
+  fi
+
+  resets_at="$(jq -r '.five_hour.resets_at // empty' "$CACHE_FILE" 2>/dev/null)" || resets_at=""
+  minutes_to_reset="null"
+  if [[ -n "$resets_at" ]]; then
+    resets_epoch="$(iso_to_epoch "$resets_at")" || resets_epoch=""
+    if [[ -n "$resets_epoch" ]]; then
+      diff=$(( resets_epoch - now ))
+      if (( diff < 0 )); then diff=0; fi
+      minutes_to_reset=$(( diff / 60 ))
+    fi
+  fi
+
+  if ! jq -c --argjson age_seconds "$age_seconds" \
+        --argjson stale "$stale" \
+        --argjson minutes_to_reset "$minutes_to_reset" \
+        '. + {age_seconds: $age_seconds, stale: $stale, minutes_to_reset: $minutes_to_reset}' \
+        "$CACHE_FILE" 2>/dev/null; then
+    fail 4 "cache-corrupt"
+  fi
+}
+
+prune_context_cache() {
+  find "$STATE_DIR" -maxdepth 1 -name 'context-*.json' -mtime +0 -exec rm -f {} + 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# Concurrency guard. macOS has no flock(1); mkdir is our atomic mutex.
+# ---------------------------------------------------------------------------
+acquire_lock() {
+  local attempt lock_mtime now age
+  for attempt in 1 2; do
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+      LOCK_HELD=1
+      return 0
+    fi
+    lock_mtime="$(stat -f %m "$LOCK_DIR" 2>/dev/null)" || lock_mtime=0
+    now=$(date -u +%s)
+    age=$(( now - lock_mtime ))
+    if (( age >= 300 )); then
+      # Stale lock from a crashed run: reclaim it and retry once.
+      rmdir "$LOCK_DIR" 2>/dev/null || true
+    else
+      return 1
+    fi
+  done
+  return 1
+}
+
+# Another process is fetching. Wait up to 15s (polling for fetched_at to
+# change), then the caller proceeds with whatever cache exists.
+wait_for_concurrent_fetch() {
+  local old_fetched_at new_fetched_at waited
+  old_fetched_at=""
+  if [[ -f "$CACHE_FILE" ]]; then
+    old_fetched_at="$(jq -r '.fetched_at // empty' "$CACHE_FILE" 2>/dev/null)" || old_fetched_at=""
+  fi
+  waited=0
+  while (( waited < 15 )); do
+    sleep 1
+    waited=$(( waited + 1 ))
+    if [[ ! -d "$LOCK_DIR" ]]; then
+      break
+    fi
+    if [[ -f "$CACHE_FILE" ]]; then
+      new_fetched_at="$(jq -r '.fetched_at // empty' "$CACHE_FILE" 2>/dev/null)" || new_fetched_at=""
+      if [[ -n "$new_fetched_at" && "$new_fetched_at" != "$old_fetched_at" ]]; then
+        break
+      fi
+    fi
+  done
+}
+
+# ---------------------------------------------------------------------------
+# Network fetch. Caller must hold the lock.
+# ---------------------------------------------------------------------------
+do_network_fetch() {
+  local blob token ua http_code curl_exit now_iso
+
+  blob=""
+  if ! blob="$(read_credentials_blob)"; then
+    fail 2 "no-credentials" "open Claude Code to refresh login"
+  fi
+
+  token=""
+  if ! token="$(printf '%s' "$blob" | jq -r '.claudeAiOauth.accessToken // empty' 2>/dev/null)"; then
+    fail 4 "credentials-parse-failed"
+  fi
+  blob=""
+
+  if [[ -z "$token" ]]; then
+    fail 2 "no-token" "open Claude Code to refresh login"
+  fi
+
+  ua="$(resolve_user_agent)"
+
+  BODY_TMP="$(mktemp "${STATE_DIR}/.usage.body.XXXXXX")"
+  ERR_TMP="$(mktemp "${STATE_DIR}/.usage.curlerr.XXXXXX")"
+
+  set +e
+  http_code="$(curl -sS -m 10 -o "$BODY_TMP" -w '%{http_code}' \
+    -H "Authorization: Bearer ${token}" \
+    -H "anthropic-beta: oauth-2025-04-20" \
+    -H "User-Agent: ${ua}" \
+    "$USAGE_URL" 2>"$ERR_TMP")"
+  curl_exit=$?
+  set -e
+  token=""
+
+  if [[ "$curl_exit" -ne 0 ]]; then
+    fail 3 "network-error"
+  fi
+  if [[ "$http_code" == "401" ]]; then
+    fail 2 "reauth-needed" "open Claude Code to refresh login"
+  fi
+  if [[ "$http_code" != "200" ]]; then
+    fail 3 "http-${http_code}"
+  fi
+
+  now_iso="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+  CACHE_WRITE_TMP="$(mktemp "${STATE_DIR}/.usage.write.XXXXXX")"
+  if ! jq -c --arg t "$now_iso" '{schema: 1, fetched_at: $t} + .' "$BODY_TMP" > "$CACHE_WRITE_TMP" 2>/dev/null; then
+    fail 4 "parse-failed"
+  fi
+  mv -f "$CACHE_WRITE_TMP" "$CACHE_FILE"
+  CACHE_WRITE_TMP=""
+
+  prune_context_cache
+}
+
+# ---------------------------------------------------------------------------
+# Mode runners
+# ---------------------------------------------------------------------------
+run_meta() {
+  local blob meta_json
+  blob=""
+  if ! blob="$(read_credentials_blob)"; then
+    fail 2 "no-credentials" "open Claude Code to refresh login"
+  fi
+  if ! meta_json="$(printf '%s' "$blob" | jq -c '{plan: .claudeAiOauth.subscriptionType, tier: .claudeAiOauth.rateLimitTier, expiresAt: .claudeAiOauth.expiresAt}' 2>/dev/null)"; then
+    fail 4 "credentials-parse-failed"
+  fi
+  blob=""
+  printf '%s\n' "$meta_json"
+}
+
+run_cached() {
+  if [[ ! -f "$CACHE_FILE" ]]; then
+    fail 6 "no-cache"
+  fi
+  emit_from_cache
+}
+
+run_fresh() {
+  mkdir -p "$STATE_DIR"
+  if acquire_lock; then
+    do_network_fetch
+    emit_from_cache
+  else
+    wait_for_concurrent_fetch
+    if [[ -f "$CACHE_FILE" ]]; then
+      emit_from_cache
+    else
+      fail 3 "concurrent-fetch-timeout"
+    fi
+  fi
+}
+
+run_default() {
+  if cache_is_fresh; then
+    emit_from_cache
+    return
+  fi
+  mkdir -p "$STATE_DIR"
+  if acquire_lock; then
+    if ! cache_is_fresh; then
+      do_network_fetch
+    fi
+    emit_from_cache
+  else
+    wait_for_concurrent_fetch
+    if [[ -f "$CACHE_FILE" ]]; then
+      emit_from_cache
+    else
+      fail 3 "concurrent-fetch-timeout"
+    fi
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
+case "$MODE" in
+  meta) run_meta ;;
+  cached) run_cached ;;
+  fresh) run_fresh ;;
+  default) run_default ;;
+esac
+
+exit 0
